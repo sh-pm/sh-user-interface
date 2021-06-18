@@ -1,10 +1,9 @@
-#!/bin/bash
-# v3.3.0 - Build with sh-pm
+#!/usr/bin/env bash
 
 source ./bootstrap.sh
 
 # Evict catastrophic rm's
-if [[ -z $ROOT_DIR_PATH ]]; then
+if [[ -z "$ROOT_DIR_PATH" ]]; then
 	echo "bootstrap.sh file not loaded!"
 	exit 1
 fi
@@ -25,7 +24,7 @@ print_help() {
 
 	echo ""
 	echo "USAGE:"
-	echo "  shpm [OPTION]"
+	echo "  [$SCRIPT_NAME] [OPTION]"
 	echo ""
 	echo "OPTIONS:"
     echo "  update                Download dependencies in local repository $LIB_DIR_SUBPATH"
@@ -50,6 +49,8 @@ print_help() {
 }
 
 run_sh_pm() {
+
+	GIT_CMD=$(which git)
 
 	local UPDATE=false
 	local TEST=false
@@ -150,19 +151,24 @@ run_sh_pm() {
 
 clean_release() {
 
+	local ACTUAL_DIR
+	ACTUAL_DIR=$(pwd)
+
 	shpm_log_operation "Cleaning release"
 	
 	if [[ ! -z "$TARGET_DIR_PATH" && -d "$TARGET_DIR_PATH" ]]; then
 	
 		shpm_log "Removing *.tar.gz files from $TARGET_DIR_PATH ..."
 		
-		cd "$TARGET_DIR_PATH"
-		rm *.tar.gz 2> /dev/null
+		cd "$TARGET_DIR_PATH" || exit 1
+		rm ./*.tar.gz 2> /dev/null
 		
 		shpm_log "Done"
 	else
 		shpm_log "ERROR: $TARGET_DIR_PATH not found."
 	fi
+	
+	cd "$ACTUAL_DIR" || exit
 }
 
 update_dependencies() {
@@ -173,10 +179,10 @@ update_dependencies() {
 	
 	shpm_log "Start update of ${#DEPENDENCIES[@]} dependencies ..."
 	for DEP_ARTIFACT_ID in "${!DEPENDENCIES[@]}"; do 
-		update_dependency $DEP_ARTIFACT_ID $VERBOSE
+		update_dependency "$DEP_ARTIFACT_ID" "$VERBOSE"
 	done
 	
-	cd $ROOT_DIR_PATH
+	cd "$ROOT_DIR_PATH" || exit 1
 	
 	shpm_log "Done"
 }
@@ -192,21 +198,24 @@ uninstall_release () {
 	local TGZ_FILE=$TARGET_FOLDER".tar.gz"
 	local TGZ_FILE_PATH=$TARGET_DIR_PATH/$TGZ_FILE
 	
-	local ACTUAL_DIR=$(pwd)
+	local ACTUAL_DIR
+	ACTUAL_DIR="$(pwd)"
 	
 	shpm_log "Removing old *.tar.gz files from $LIB_DIR_PATH ..."
-	cd $LIB_DIR_PATH/
-	rm *".tar.gz" 2> /dev/null	
+	cd "$LIB_DIR_PATH/" || exit;
+	rm ./*".tar.gz" 2> /dev/null	
 	
 	shpm_log "Move lib $LIB_DIR_PATH/$TARGET_FOLDER to /tmp folder ..."
 	if [[ -d  $LIB_DIR_PATH/$TARGET_FOLDER ]]; then
 		# evict rm -rf!
-		mv $LIB_DIR_PATH/$TARGET_FOLDER /tmp 2> /dev/null
-		local TIMESTAMP=$( date +"%Y%m%d_%H%M%S_%N" )			
-		mv /tmp/$TARGET_FOLDER /tmp/$TARGET_FOLDER"_"$TIMESTAMP
+		mv "$LIB_DIR_PATH"/"$TARGET_FOLDER" /tmp 2> /dev/null
+		
+		local TIMESTAMP
+		TIMESTAMP=$( date +"%Y%m%d_%H%M%S_%N" )			
+		mv "/tmp/$TARGET_FOLDER" "/tmp/$TARGET_FOLDER""_""$TIMESTAMP"
 	fi	
 	
-	cd "$ACTUAL_DIR"
+	cd "$ACTUAL_DIR" || exit
 	
 	shpm_log "Done"
 }
@@ -223,18 +232,19 @@ install_release () {
 	local TGZ_FILE=$TARGET_FOLDER".tar.gz"
 	local TGZ_FILE_PATH=$TARGET_DIR_PATH/$TGZ_FILE
 	
-	local ACTUAL_DIR=$(pwd)
+	local ACTUAL_DIR
+	ACTUAL_DIR=$(pwd)
 	
 	shpm_log "Install $TGZ_FILE_PATH into $LIB_DIR_PATH ..."
-	cd $LIB_DIR_PATH/
+	cd "$LIB_DIR_PATH/" || exit
 	
-	cp $TGZ_FILE_PATH $LIB_DIR_PATH/	
+	cp "$TGZ_FILE_PATH" "$LIB_DIR_PATH/"	
 	
-	tar -xzf $TGZ_FILE
+	tar -xzf "$TGZ_FILE"
 		
-	rm -f $TGZ_FILE
+	rm -f "$TGZ_FILE"
 	
-	cd "$ACTUAL_DIR"
+	cd "$ACTUAL_DIR" || exit
 	
 	shpm_log "Done"
 }
@@ -254,26 +264,20 @@ update_dependency() {
 		local DOWNLOAD_FROM_GIT=$FALSE
 		
 		if [[ ! -d $LIB_DIR_PATH ]]; then
-		  mkdir -p $LIB_DIR_PATH
+		  mkdir -p "$LIB_DIR_PATH"
 		fi
 		
 		# Download from git
 		if [[ "$ARTIFACT_DATA" == *"@"* ]]; then
-			DEP_VERSION=$( echo $ARTIFACT_DATA | cut -d "@" -f 1 | xargs ) #xargs is to trim string!
-			REPOSITORY=$( echo $ARTIFACT_DATA | cut -d "@" -f 2 | xargs ) #xargs is to trim string!
+			DEP_VERSION=$( echo "$ARTIFACT_DATA" | cut -d "@" -f 1 | xargs ) #xargs is to trim string!
+			REPOSITORY=$( echo "$ARTIFACT_DATA" | cut -d "@" -f 2 | xargs ) #xargs is to trim string!
 			
 			if [[ "$REPOSITORY" == "" ]]; then
 				shpm_log "Error in update of $DEP_ARTIFACT_ID dependency: Inform a repository after '@'"
 				exit 1
 			fi
 			
-			DOWNLOAD_FROM_GIT=$TRUE
-		# Download from shpmcenter
-		else
-			REPOSITORY=$HOST":"$PORT
-			DEP_VERSION="$ARTIFACT_DATA"
-			
-			DOWNLOAD_FROM_GIT=$FALSE
+			DOWNLOAD_FROM_GIT=$TRUE		
 		fi
 
 		local DEP_FOLDER_NAME=$DEP_ARTIFACT_ID"-"$DEP_VERSION
@@ -283,111 +287,89 @@ update_dependency() {
 		shpm_log "   - Downloading $DEP_ARTIFACT_ID $DEP_VERSION from $REPOSITORY ..."
 			
 		# If repo is a shpmcenter 
-		if [[ $DOWNLOAD_FROM_GIT == $FALSE ]]; then
-			local DEP_FILENAME=$DEP_FOLDER_NAME".tar.gz"
-			
-			CURL_OPTIONS="-s"
-			if [[ "$VERBOSE" == "true" ]]; then
-			    CURL_OPTIONS="-v"
-			fi
-			curl $CURL_OPTIONS  https://$REPOSITORY/sh-archiva/get/snapshot/$GROUP_ID/$DEP_ARTIFACT_ID/$DEP_VERSION > $LIB_DIR_PATH/$DEP_FILENAME 
-			
-			cd $LIB_DIR_PATH/
-			
-			if [[ -d  $LIB_DIR_PATH/$DEP_ARTIFACT_ID ]]; then
-			    shpm_log "   - Removing existing folder $LIB_DIR_PATH/$DEP_ARTIFACT_ID ..."
-				# evict rm -rf!
-				mv $LIB_DIR_PATH/$DEP_ARTIFACT_ID /tmp 2> /dev/null
-				local TIMESTAMP=$( date +"%Y%m%d_%H%M%S_%N" )			
-				mv /tmp/$DEP_ARTIFACT_ID /tmp/$DEP_ARTIFACT_ID"_"$TIMESTAMP
-			fi
-			
-			shpm_log "   - Extracting $DEP_FILENAME into $LIB_DIR_PATH/$DEP_FOLDER_NAME ..."
-			tar -xzf $DEP_FILENAME &>/dev/null
-			
-			if [[ $? == 0 ]]; then
-				DOWNLOAD_SUCESS=$TRUE
-				rm -f $DEP_FILENAME
-			else
-				shpm_log "  ERROR: Could not extract $DEP_FILENAME into $LIB_DIR_PATH/$DEP_FOLDER_NAME!"
-			fi
-			
-		# if repo is a git
-		else
+		if [[ "$DOWNLOAD_FROM_GIT" == "$TRUE" ]]; then
  
- 			local ACTUAL_DIR=$( pwd )
+ 			local ACTUAL_DIR
+ 			ACTUAL_DIR=$( pwd )
  			
- 			cd $LIB_DIR_PATH/
+ 			cd "$LIB_DIR_PATH/" || exit
 			
-			if [[ -d $DEP_FOLDER_NAME ]]; then
-				mv $DEP_FOLDER_NAME /tmp				
+			if [[ -d "$DEP_FOLDER_NAME" ]]; then
+				mv "$DEP_FOLDER_NAME" /tmp				
 			fi
 			
 			if [[ -d "/tmp/$DEP_FOLDER_NAME" ]]; then
-				rm -rf /tmp/$DEP_FOLDER_NAME				
+				rm -rf "/tmp/$DEP_FOLDER_NAME"				
 			fi
 			
 			if [[ -d "/tmp/$DEP_ARTIFACT_ID" ]]; then
-				rm -rf /tmp/$DEP_ARTIFACT_ID				
+				rm -rf "/tmp/$DEP_ARTIFACT_ID"				
 			fi
 			
-			cd /tmp/
+			cd /tmp/ || exit
 			
 			shpm_log "     - Cloning from https://$REPOSITORY/$DEP_ARTIFACT_ID into /tmp/$DEP_ARTIFACT_ID ..."
-			git clone --branch $DEP_VERSION "https://"$REPOSITORY"/"$DEP_ARTIFACT_ID".git" &>/dev/null
-			
-			if [[ $? == 0 ]]; then
+			shpm_log "        $GIT_CMD clone --branch $DEP_VERSION https://$REPOSITORY/$DEP_ARTIFACT_ID.git"
+			if "$GIT_CMD" clone --branch "$DEP_VERSION" "https://""$REPOSITORY""/""$DEP_ARTIFACT_ID"".git" &>/dev/null ; then
 				DOWNLOAD_SUCESS=$TRUE
 			fi
 			
 			if [[ ! -d "$LIB_DIR_PATH/$DEP_FOLDER_NAME" ]]; then
-				mkdir -p $LIB_DIR_PATH/$DEP_FOLDER_NAME
+				mkdir -p "$LIB_DIR_PATH""/""$DEP_FOLDER_NAME"
 			fi
 						
-			cd $LIB_DIR_PATH/$DEP_FOLDER_NAME
+			cd "$LIB_DIR_PATH""/""$DEP_FOLDER_NAME" || exit
 			
 			shpm_log "   - Copy artifacts from /tmp/$DEP_ARTIFACT_ID to $LIB_DIR_PATH/$DEP_FOLDER_NAME ..."
-			cp /tmp/$DEP_ARTIFACT_ID/src/main/sh/* .
-			cp /tmp/$DEP_ARTIFACT_ID/pom.sh .
+			cp "/tmp/$DEP_ARTIFACT_ID/src/main/sh/"* .
+			cp "/tmp/$DEP_ARTIFACT_ID/pom.sh" .
 			
-			cd /tmp
+			if [[ "$DEP_ARTIFACT_ID" == "sh-pm" ]]; then
+				shpm_log "     - Copy bootstrap.sh to $LIB_DIR_PATH/$DEP_FOLDER_NAME ..."
+				cp "/tmp/$DEP_ARTIFACT_ID/bootstrap.sh" .
+				
+				shpm_log "     - Update bootstrap.sh sourcing command from shpm.sh file ..."
+	   			sed -i 's/source \.\.\/\.\.\/\.\.\/bootstrap.sh/source \.\/bootstrap.sh/g' shpm.sh
+			fi
+			
+			cd /tmp || exit
 			
 			shpm_log "   - Removing /tmp/$DEP_ARTIFACT_ID ..."
 			if [[ -d /tmp/"$DEP_ARTIFACT_ID" ]]; then
-				rm -rf /tmp/$DEP_ARTIFACT_ID				
+				rm -rf "/tmp/$DEP_ARTIFACT_ID"				
 			fi
 			
-			cd $ACTUAL_DIR
+			cd "$ACTUAL_DIR" || exit
 		fi
 			
-		if [[ $DOWNLOAD_SUCESS == $TRUE ]]; then
+		if [[ "$DOWNLOAD_SUCESS" == "$TRUE" ]]; then
 			# if update a sh-pm
 			if [[ "$DEP_ARTIFACT_ID" == "sh-pm" ]]; then
 			
-	        	if [[ ! -d $ROOT_DIR_PATH/tmpoldshpm ]]; then
-		        	mkdir $ROOT_DIR_PATH/tmpoldshpm		
+	        	if [[ ! -d "$ROOT_DIR_PATH/tmpoldshpm" ]]; then
+		        	mkdir "$ROOT_DIR_PATH/tmpoldshpm"		
 				fi
 		        
 		        shpm_log "     WARN: sh-pm updating itself ..."
 		        
-		        if [[ -f $ROOT_DIR_PATH/shpm.sh ]]; then
+		        if [[ -f "$ROOT_DIR_PATH/shpm.sh" ]]; then
 		        	shpm_log "   - backup actual sh-pm version to $ROOT_DIR_PATH/tmpoldshpm ..."
-		        	mv $ROOT_DIR_PATH/shpm.sh $ROOT_DIR_PATH/tmpoldshpm
+		        	mv "$ROOT_DIR_PATH/shpm.sh" "$ROOT_DIR_PATH/tmpoldshpm"
 		        fi
 		        
-		        if [[ -f $LIB_DIR_PATH/$DEP_FOLDER_NAME/shpm.sh ]]; then
+		        if [[ -f "$LIB_DIR_PATH/$DEP_FOLDER_NAME/shpm.sh" ]]; then
 		        	shpm_log "   - update shpm.sh ..."
-		        	cp $LIB_DIR_PATH/$DEP_FOLDER_NAME/shpm.sh	$ROOT_DIR_PATH
+		        	cp "$LIB_DIR_PATH/$DEP_FOLDER_NAME/shpm.sh"	"$ROOT_DIR_PATH"
 		        fi
 		        
-		        if [[ -f $ROOT_DIR_PATH/$BOOTSTRAP_FILENAME ]]; then
+		        if [[ -f "$ROOT_DIR_PATH/$BOOTSTRAP_FILENAME" ]]; then
 		        	shpm_log "   - backup actual $BOOTSTRAP_FILENAME to $ROOT_DIR_PATH/tmpoldshpm ..."
-		        	mv $ROOT_DIR_PATH/$BOOTSTRAP_FILENAME $ROOT_DIR_PATH/tmpoldshpm
+		        	mv "$ROOT_DIR_PATH/$BOOTSTRAP_FILENAME" "$ROOT_DIR_PATH/tmpoldshpm"
 		        fi
 		        
-		        if [[ -f $LIB_DIR_PATH/$DEP_FOLDER_NAME/$BOOTSTRAP_FILENAME ]]; then
+		        if [[ -f "$LIB_DIR_PATH/$DEP_FOLDER_NAME/$BOOTSTRAP_FILENAME" ]]; then
 		        	shpm_log "   - update $BOOTSTRAP_FILENAME ..."
-		        	cp $LIB_DIR_PATH/$DEP_FOLDER_NAME/$BOOTSTRAP_FILENAME	$ROOT_DIR_PATH
+		        	cp "$LIB_DIR_PATH/$DEP_FOLDER_NAME/$BOOTSTRAP_FILENAME"	"$ROOT_DIR_PATH"
 		        fi
 			fi
 		else 		   		  
@@ -404,7 +386,7 @@ build_release() {
 	run_all_tests
 	
 	# Verify if are unit test failures
-	if [ ! -z ${TEST_STATUS+x} ]; then
+	if [ ! -z "${TEST_STATUS+x}" ]; then
 		if [[ "$TEST_STATUS" != "OK" ]]; then
 			shpm_log "Unit Test's failed!"
 			exit 1; 
@@ -413,58 +395,59 @@ build_release() {
 
 	shpm_log_operation "Build Release"
 
-	local HOST=${REPOSITORY[host]}
-	local PORT=${REPOSITORY[port]}	
+	local HOST="${REPOSITORY[host]}"
+	local PORT="${REPOSITORY[port]}"	
 
 	shpm_log "Remove $TARGET_DIR_PATH folder ..."
 	rm -rf ./target
 	
-	TARGET_FOLDER=$ARTIFACT_ID"-"$VERSION
+	TARGET_FOLDER="$ARTIFACT_ID""-""$VERSION"
 	
-	if [[ ! -d $TARGET_DIR_PATH/$TARGET_FOLDER ]]; then
-		mkdir -p $TARGET_DIR_PATH/$TARGET_FOLDER 
+	echo "$TARGET_DIR_PATH/$TARGET_FOLDER"
+	if [[ ! -d "$TARGET_DIR_PATH/$TARGET_FOLDER" ]]; then
+		mkdir -p "$TARGET_DIR_PATH/$TARGET_FOLDER" 
 	fi
 
 	shpm_log "Coping .sh files from $SRC_DIR_PATH/* to $TARGET_DIR_PATH/$TARGET_FOLDER ..."
-	cp -R $SRC_DIR_PATH/* $TARGET_DIR_PATH/$TARGET_FOLDER
+	cp -R "$SRC_DIR_PATH"/* "$TARGET_DIR_PATH/$TARGET_FOLDER"
 	
 	# if not build itself
-	if [[ ! -f $SRC_DIR_PATH/"shpm.sh" ]]; then
+	if [[ ! -f "$SRC_DIR_PATH/shpm.sh" ]]; then
 		shpm_log "Coping pom.sh ..."
-		cp $ROOT_DIR_PATH/pom.sh $TARGET_DIR_PATH/$TARGET_FOLDER
+		cp "$ROOT_DIR_PATH/pom.sh" "$TARGET_DIR_PATH/$TARGET_FOLDER"
 	else 
 		shpm_log "Creating pom.sh ..."
-	    cp $SRC_DIR_PATH/../resources/template_pom.sh $TARGET_DIR_PATH/$TARGET_FOLDER/pom.sh
+	    cp "$SRC_DIR_PATH/../resources/template_pom.sh" "$TARGET_DIR_PATH/$TARGET_FOLDER/pom.sh"
 	    
 	    shpm_log "Coping bootstrap.sh ..."
-    	cp $ROOT_DIR_PATH/bootstrap.sh $TARGET_DIR_PATH/$TARGET_FOLDER
+    	cp "$ROOT_DIR_PATH/bootstrap.sh" "$TARGET_DIR_PATH/$TARGET_FOLDER"
 	fi
 	
 	shpm_log "Add sh-pm comments in .sh files ..."
-	cd $TARGET_DIR_PATH/$TARGET_FOLDER	
-	sed -i 's/\#\!\/bin\/bash/\#\!\/bin\/bash\n# '$VERSION' - Build with sh-pm/g' *.sh
+	cd "$TARGET_DIR_PATH/$TARGET_FOLDER" || exit
+	sed -i 's/\#\!\/bin\/bash/\#\!\/bin\/bash\n# '"$VERSION"' - Build with sh-pm/g' ./*.sh
 		
 	# if not build itself
 	if [[ ! -f $TARGET_DIR_PATH/$TARGET_FOLDER/"shpm.sh" ]]; then
 		shpm_log "Removing bootstrap.sh sourcing command from .sh files ..."
-		sed -i 's/source \.\/bootstrap.sh//g' *.sh		
-		sed -i 's/source \.\.\/\.\.\/\.\.\/bootstrap.sh//g' *.sh
+		sed -i 's/source \.\/bootstrap.sh//g' ./*.sh		
+		sed -i 's/source \.\.\/\.\.\/\.\.\/bootstrap.sh//g' ./*.sh
 	else
 		shpm_log "Update bootstrap.sh sourcing command from .sh files ..."
 	   	sed -i 's/source \.\.\/\.\.\/\.\.\/bootstrap.sh/source \.\/bootstrap.sh/g' shpm.sh	   	
 	fi
 	
 	shpm_log "Package: Compacting .sh files ..."
-	cd $TARGET_DIR_PATH	
-	tar -czf $TARGET_FOLDER".tar.gz" $TARGET_FOLDER
+	cd "$TARGET_DIR_PATH" || exit
+	tar -czf "$TARGET_FOLDER"".tar.gz" "$TARGET_FOLDER"
 	
-	if [[ -d $TARGET_DIR_PATH/$TARGET_FOLDER ]]; then
-		rm -rf $TARGET_DIR_PATH/$TARGET_FOLDER	
+	if [[ -d "$TARGET_DIR_PATH/$TARGET_FOLDER" ]]; then
+		rm -rf "${TARGET_DIR_PATH:?}/${TARGET_FOLDER:?}"
 	fi
 	
 	shpm_log "Relese file generated in folder $TARGET_DIR_PATH"
 	
-	cd $ROOT_DIR_PATH
+	cd "$ROOT_DIR_PATH" || exit
 	
 	shpm_log "Done"
 }
@@ -498,14 +481,14 @@ publish_release() {
 	shpm_log "----------------------------------------------------------------------------"
 	
 	echo Username:
-	read USERNAME
+	read -r USERNAME
 	
 	echo Password:
-	read -s PASSWORD
+	read -r -s PASSWORD
 	
 	shpm_log "Authenticating user \"$USERNAME\" in $SSO_API_AUTHENTICATION_URL ..."
-	#echo "curl -s -X POST -d '{\"username\" : \"'$USERNAME'\", \"password\": \"'$PASSWORD'\"}' -H 'Content-Type: application/json' $SSO_API_AUTHENTICATION_URL"	
-	TOKEN=$( curl -s -X POST -d '{"username" : "'$USERNAME'", "password": "'$PASSWORD'"}' -H 'Content-Type: application/json' $SSO_API_AUTHENTICATION_URL )
+	#echo "curl -s -X POST -d '{"username" : "'"$USERNAME"'", "password": "'"$PASSWORD"'"}' -H 'Content-Type: application/json' "$SSO_API_AUTHENTICATION_URL""	
+	TOKEN=$( curl -s -X POST -d '{"username" : "'"$USERNAME"'", "password": "'"$PASSWORD"'"}' -H 'Content-Type: application/json' "$SSO_API_AUTHENTICATION_URL" )
 	
 	if [[ "$TOKEN" == "" ]]; then
 		shpm_log "Authentication failed"
@@ -520,7 +503,7 @@ publish_release() {
 		    CURL_OPTIONS="-v"
 		fi
 			
-		MSG_RETURNED=$( curl $CURL_OPTIONS -F file=@"$FILE_PATH" -H "$TOKEN_HEADER" $TARGET_REPO )
+		MSG_RETURNED=$( curl "$CURL_OPTIONS" -F file=@"$FILE_PATH" -H "$TOKEN_HEADER" "$TARGET_REPO" )
 		shpm_log "Sended"
 		
 		shpm_log "Return received from repository:"
@@ -532,28 +515,59 @@ publish_release() {
 	fi 
 }
 
+run_shellcheck() {
+    local SHELLCHECK_CMD
+    SHELLCHECK_CMD=$(which shellcheck)
+    
+    if [[ ! -z "$SHELLCHECK_CMD" ]]; then
+	    shpm_log_operation "Running ShellCheck in .sh files ..."
+	    
+	    if [[ ! -d "$TARGET_DIR_PATH" ]]; then
+	    	mkdir -p "$TARGET_DIR_PATH"
+	    fi
+	    
+	    for FILE_TO_CHECK in $SRC_DIR_PATH/*.sh; do        
+	    
+	    	if "$SHELLCHECK_CMD" -x -e SC1090 "$FILE_TO_CHECK" > "$TARGET_DIR_PATH/shellcheck.log"; then
+	    		shpm_log "$FILE_TO_CHECK passed in shellcheck"
+	    	else
+	    		shpm_log "$FILE_TO_CHECK have shellcheck errors. See log in $TARGET_DIR_PATH"
+	    		exit 1
+	    	fi
+    	done;
+    fi
+    
+    shpm_log ""
+    shpm_log "ShellCheck finish."
+    shpm_log ""
+}
+
 run_all_tests() {
+
+	run_shellcheck
 
 	shpm_log_operation "Searching unit test files to run ..."
 
-	local ACTUAL_DIR=$(pwd)
+	local ACTUAL_DIR
+	ACTUAL_DIR=$(pwd)
 
-	cd $TEST_DIR_PATH
+	cd "$TEST_DIR_PATH" || exit
 	
-	local TEST_FILES=( $(ls *_test.sh 2> /dev/null) );
+	local TEST_FILES
+	TEST_FILES=( $(ls ./*_test.sh 2> /dev/null) );
 	
 	shpm_log "Found ${#TEST_FILES[@]} test files" 
-	if (( ${#TEST_FILES[@]} > 0 )); then
-		for file in ${TEST_FILES[@]}
+	if (( "${#TEST_FILES[@]}" > 0 )); then
+		for file in "${TEST_FILES[@]}"
 		do
 			shpm_log "Run file ..."
-			source $file
+			source "$file"
 		done
 	else
 		shpm_log "Nothing to test"
 	fi
 	
-	cd $ACTUAL_DIR
+	cd "$ACTUAL_DIR" || exit 1
 	shpm_log "Done"
 }
 
@@ -566,7 +580,7 @@ auto_update() {
 	
 	for DEP_ARTIFACT_ID in "${!DEPENDENCIES[@]}"; do 
 	    if [[ "$DEP_ARTIFACT_ID" == "sh-pm" ]]; then		
-			update_dependency $DEP_ARTIFACT_ID
+			update_dependency "$DEP_ARTIFACT_ID"
 			
 			shpm_log "Done"
 	        exit 0    
@@ -581,22 +595,23 @@ init_project_structure() {
 
 	shpm_log_operation "Running sh-pm init ..."
 	
-	local FILENAME="/tmp/nothing"
+	local FILENAME
+	FILENAME="/tmp/nothing"
 	
-	if [[ ! -d $SRC_DIR_PATH ]]; then
+	if [[ ! -d "$SRC_DIR_PATH" ]]; then
 	   shpm_log "Creating $SRC_DIR_SUBPATH ..."
 	   mkdir -p "$SRC_DIR_PATH"
 	fi
 	
-	if [[ ! -d $TEST_DIR_PATH ]]; then
+	if [[ ! -d "$TEST_DIR_PATH" ]]; then
 	   shpm_log "Creating $TEST_DIR_SUBPATH ..."
 	   mkdir -p "$TEST_DIR_PATH"
 	fi  
     
-    cd "$ROOT_DIR_PATH"
+    cd "$ROOT_DIR_PATH" || exit 1
     
     shpm_log "Move source code to $SRC_DIR_PATH ..."
-    for file in $ROOT_DIR_PATH/*
+    for file in "$ROOT_DIR_PATH"/*
 	do
         FILENAME=$( basename "$file" )
         
@@ -622,7 +637,7 @@ init_project_structure() {
 	    fi
 	done
 	
-	cd "$SRC_DIR_PATH" 
+	cd "$SRC_DIR_PATH" || exit 1 
 	
 	shpm_log "sh-pm expected project structure initialized"
 	exit 0
@@ -630,4 +645,4 @@ init_project_structure() {
 
 
 
-run_sh_pm $@
+run_sh_pm "$@"
