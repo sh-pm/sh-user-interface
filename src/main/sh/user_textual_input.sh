@@ -14,8 +14,8 @@ ensure_user_confirm_before_proceed() {
 	
 	# Check number of params 
 	if ! is_number_params_correct 2 "$@"; then
-		print_usage_help "$(declare -p params)" $@ -f
-	    exit $FALSE
+		print_usage_help "$(declare -p params)" "$@" -f
+	    exit "$FALSE"
 	fi
 	 
 
