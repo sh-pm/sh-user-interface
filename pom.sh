@@ -1,6 +1,6 @@
 GROUP_ID=bash
 ARTIFACT_ID=sh-user-interface
-VERSION=v0.1.0
+VERSION=v0.2.0
 
 declare -A DEPENDENCIES=( \
     [sh-pm]=v4.0.0@github.com/sh-pm \
